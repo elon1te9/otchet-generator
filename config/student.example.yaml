@@ -1,0 +1,25 @@
+# Заполните самостоятельно или попросите Codex задать вопросы и заполнить файл.
+# Пустые строки означают, что сведения еще не подтверждены.
+student:
+  full_name: ""
+  group: ""
+  specialty_code: ""
+  specialty_name: ""
+institution:
+  name: ""
+  city: ""
+practice:
+  kind: ""
+  module_code: ""
+  practice_code: ""
+  title: ""
+  start_date: ""
+  end_date: ""
+  supervisors: []
+project:
+  path: ""
+  topic: ""
+  assignment: ""
+references:
+  current_example: ""
+  style_example: ""

@@ -1,0 +1,22 @@
+# User inputs and results; share with tools/package_generator.py.
+config/student.yaml
+project/*
+!project/.gitkeep
+references/current-example/*
+!references/current-example/.gitkeep
+references/previous-reports/*
+!references/previous-reports/.gitkeep
+screenshots/*
+!screenshots/raw/
+!screenshots/selected/
+screenshots/raw/*
+!screenshots/raw/.gitkeep
+screenshots/selected/*
+!screenshots/selected/.gitkeep
+temp/
+output/
+**/__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*

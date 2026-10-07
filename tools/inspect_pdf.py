@@ -4,13 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from pathlib import Path
 
 import pdfplumber
 import pypdfium2 as pdfium
 from pypdf import PdfReader
+from report_cli import add_summary_argument, require_summary_artifact, emit_result
 
 
 def main():
@@ -20,7 +20,9 @@ def main():
     parser.add_argument("--text", type=Path)
     parser.add_argument("--render-dir", type=Path)
     parser.add_argument("--scale", type=float, default=2.0)
+    add_summary_argument(parser)
     args = parser.parse_args()
+    require_summary_artifact(parser, args)
 
     reader = PdfReader(args.input)
     with pdfplumber.open(args.input) as pdf:
@@ -43,11 +45,7 @@ def main():
         "metadata": {str(k): str(v) for k, v in (reader.metadata or {}).items()},
         "pages": pages,
     }
-    if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-    else:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+    # Emit after text extraction and rendering, so a summary is not premature.
     if args.text:
         args.text.parent.mkdir(parents=True, exist_ok=True)
         args.text.write_text("".join(text_parts).lstrip(), encoding="utf-8")
@@ -66,6 +64,8 @@ def main():
             match = re.fullmatch(r'page-(\d+)\.png', old.name)
             if match and int(match[1]) > len(pdf) and old.resolve().parent == target:
                 old.unlink()
+
+    emit_result(result, args.json, args.summary, print_saved=False)
 
 
 if __name__ == "__main__":

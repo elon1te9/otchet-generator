@@ -33,7 +33,8 @@ def check(doc, plan=None):
     return {'status':'fail' if issues else 'pass','issues':issues,'conclusions':conclusions,'manual_review_required':'Read each summary for meaning and evidence; introductory words are not sufficient.'}
 
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('docx',type=Path);parser.add_argument('--plan',required=True,type=Path);parser.add_argument('--json',type=Path);args=parser.parse_args()
-    result=check(Document(args.docx),load_plan(args.plan));payload=json.dumps(result,ensure_ascii=False,indent=2)
-    if args.json:args.json.parent.mkdir(parents=True,exist_ok=True);args.json.write_text(payload,encoding='utf-8')
-    print(payload);raise SystemExit(result['status']!='pass')
+    from report_cli import add_summary_argument, require_summary_artifact, emit_result
+    parser=argparse.ArgumentParser();parser.add_argument('docx',type=Path);parser.add_argument('--plan',required=True,type=Path);parser.add_argument('--json',type=Path)
+    add_summary_argument(parser);args=parser.parse_args();require_summary_artifact(parser,args)
+    result=check(Document(args.docx),load_plan(args.plan))
+    emit_result(result,args.json,args.summary);raise SystemExit(result['status']!='pass')

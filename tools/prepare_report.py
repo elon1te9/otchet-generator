@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import sys
+from report_cli import add_summary_argument, require_summary_artifact, emit_result
 
 try:
     import yaml
@@ -74,7 +75,11 @@ def prepare(root, config_path):
     fingerprints = {config_path.relative_to(root).as_posix(): sha256(config_path)}
     def remember(path):
         fingerprints[path.relative_to(root).as_posix()] = sha256(path)
-    for path in [root/'AGENTS.md', *documents(root/'docs'), *documents(root/'skills'), *documents(root/'references/official')]:
+    tool_sources = sorted(p for p in (root/'tools').rglob('*')
+                          if p.is_file() and p.suffix.lower() in {'.py', '.ps1'}
+                          and '__pycache__' not in p.parts)
+    for path in [root/'AGENTS.md', root/'requirements.txt', *tool_sources,
+                 *documents(root/'docs'), *documents(root/'skills'), *documents(root/'references/official')]:
         if path.is_file():
             remember(path)
     if not documents(root/'references/official'):
@@ -140,19 +145,56 @@ def prepare(root, config_path):
             'input_signature': signature, 'fingerprints': fingerprints,
             'execution_verified': False}
 
+def compare_inputs(current, previous):
+    """Compare snapshots, never treating missing/corrupt/incomplete data as a hit."""
+    def valid(snapshot):
+        if not isinstance(snapshot, dict) or snapshot.get('status') != 'ready':
+            return False
+        hashes = snapshot.get('fingerprints')
+        if not isinstance(hashes, dict) or not hashes:
+            return False
+        if any(not isinstance(path, str) or not isinstance(digest, str)
+               or len(digest) != 64 or any(c not in '0123456789abcdef' for c in digest)
+               for path, digest in hashes.items()):
+            return False
+        signature = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+        return snapshot.get('input_signature') == signature
+
+    before = previous.get('fingerprints', {}) if isinstance(previous, dict) else {}
+    before = before if isinstance(before, dict) and all(isinstance(p, str) for p in before) else {}
+    after = current.get('fingerprints', {})
+    after = after if isinstance(after, dict) and all(isinstance(p, str) for p in after) else {}
+    added = sorted(set(after) - set(before))
+    removed = sorted(set(before) - set(after))
+    changed = sorted(path for path in set(after) & set(before) if after[path] != before[path])
+    match = valid(current) and valid(previous) and not (added or removed or changed)
+    status = ('match' if match else 'changed' if valid(current) and valid(previous)
+              else 'cold' if previous is None and valid(current) else 'invalid')
+    return {'status': status, 'inputs_match': match,
+            'previous_input_signature': previous.get('input_signature') if isinstance(previous, dict) else None,
+            'added': added, 'changed': changed, 'removed': removed,
+            'execution_verified': False}
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=Path, default=Path('config/student.yaml'))
     parser.add_argument('--json', type=Path)
+    add_summary_argument(parser)
     args = parser.parse_args()
+    require_summary_artifact(parser, args)
     root = Path(__file__).resolve().parents[1]
     config_path = inside(root, str(args.config))
     result = prepare(root, config_path)
-    payload = json.dumps(result, ensure_ascii=False, indent=2)
+    previous = None
     if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(payload, encoding='utf-8')
-    print(payload)
+        try:
+            previous = json.loads(args.json.read_text(encoding='utf-8-sig'))
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            previous = {}  # Invalid, not a successful cache comparison.
+    result['cache'] = compare_inputs(result, previous)
+    emit_result(result, args.json, args.summary)
     return 0 if result['status'] == 'ready' else 2
 
 if __name__ == '__main__':

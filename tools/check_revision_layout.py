@@ -215,9 +215,9 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
             'visual_review_required':True,'evidence_review_required':True}
 
 if __name__=='__main__':
-    a=argparse.ArgumentParser(); a.add_argument('docx',type=Path); a.add_argument('--plan',required=True,type=Path); a.add_argument('--manifest',type=Path); a.add_argument('--pdf',type=Path); a.add_argument('--baseline',type=Path); a.add_argument('--json',type=Path); args=a.parse_args()
+    from report_cli import add_summary_argument, require_summary_artifact, emit_result
+    a=argparse.ArgumentParser(); a.add_argument('docx',type=Path); a.add_argument('--plan',required=True,type=Path); a.add_argument('--manifest',type=Path); a.add_argument('--pdf',type=Path); a.add_argument('--baseline',type=Path); a.add_argument('--json',type=Path)
+    add_summary_argument(a); args=a.parse_args(); require_summary_artifact(a,args)
     result=check(Document(args.docx),args.pdf,args.baseline,load_plan(args.plan),args.manifest)
-    payload=json.dumps(result,ensure_ascii=False,indent=2)
-    if args.json:
-        args.json.parent.mkdir(parents=True,exist_ok=True); args.json.write_text(payload,encoding='utf-8')
-    print(payload); raise SystemExit(1 if result['status']=='fail' else 2 if result['status']=='pending-manual' else 0)
+    emit_result(result,args.json,args.summary)
+    raise SystemExit(1 if result['status']=='fail' else 2 if result['status']=='pending-manual' else 0)

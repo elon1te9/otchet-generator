@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import zipfile
 from pathlib import Path
@@ -12,6 +11,7 @@ from pathlib import Path
 from docx import Document
 from report_plan import load_plan, structure_issues, body_start, is_toc
 from report_pagination import pagination_issues
+from report_cli import add_summary_argument, require_summary_artifact, emit_result
 
 
 FIGURE_RE = re.compile(r"^Рисунок\s+(\d+)\.(\d+)\s+\S")
@@ -37,7 +37,9 @@ def main():
     parser.add_argument("--plan", required=True, type=Path, help="Current report structure from the selected example.")
     parser.add_argument("--json", type=Path)
     parser.add_argument("--protected-baseline", type=Path, help="Preserve the user's title section layout; verify it against this baseline.")
+    add_summary_argument(parser)
     args = parser.parse_args()
+    require_summary_artifact(parser, args)
 
     doc = Document(args.input)
     plan = load_plan(args.plan)
@@ -132,11 +134,7 @@ def main():
         "scope": "structural-only",
         "rendered_review_required": True,
     }
-    payload = json.dumps(result, ensure_ascii=False, indent=2)
-    if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(payload, encoding="utf-8")
-    print(payload)
+    emit_result(result, args.json, args.summary)
     raise SystemExit(1 if result["status"] == "fail" else 0)
 
 

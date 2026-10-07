@@ -177,7 +177,7 @@ class GeneratorTests(unittest.TestCase):
             self.assertEqual(config['student']['full_name'],'')
             self.assertTrue(any(name.startswith('references/official/') and name.endswith('.pdf') for name in names))
     def test_config_dates_and_project_change(self):
-        for directory in ('config','docs','skills','references/current-example','references/official','project/example'):
+        for directory in ('config','docs','skills','tools','references/current-example','references/official','project/example'):
             (self.root/directory).mkdir(parents=True,exist_ok=True)
         (self.root/'references/current-example/sample.txt').write_text('synthetic example',encoding='utf-8')
         (self.root/'references/official/rules.txt').write_text('synthetic rules',encoding='utf-8')
@@ -190,6 +190,12 @@ class GeneratorTests(unittest.TestCase):
         config['project'].update(path='project/example',assignment='project/example/assignment.md')
         path=self.root/'config/student.yaml'; path.write_text(yaml.safe_dump(config,allow_unicode=True),encoding='utf-8')
         first=prepare(self.root,path); self.assertEqual(first['status'],'ready')
+        tool=self.root/'tools/check.py'; tool.write_text('version = 1',encoding='utf-8')
+        with_tool=prepare(self.root,path)
+        self.assertNotEqual(first['input_signature'],with_tool['input_signature'])
+        self.assertIn('tools/check.py',with_tool['fingerprints'])
+        tool.write_text('version = 2',encoding='utf-8')
+        self.assertNotEqual(with_tool['input_signature'],prepare(self.root,path)['input_signature'])
         source.write_text('value = 2',encoding='utf-8')
         self.assertNotEqual(first['input_signature'],prepare(self.root,path)['input_signature'])
         config['practice']['end_date']='2025-12-31'; path.write_text(yaml.safe_dump(config),encoding='utf-8')

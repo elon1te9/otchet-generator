@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -12,6 +11,7 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 from lxml import etree
+from report_cli import add_summary_argument, require_summary_artifact, emit_result
 
 
 def emu_to_mm(value):
@@ -102,7 +102,9 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("--json", type=Path)
     parser.add_argument("--text", type=Path)
+    add_summary_argument(parser)
     args = parser.parse_args()
+    require_summary_artifact(parser, args)
 
     doc = Document(args.input)
     paragraphs = [paragraph_record(p, i) for i, p in enumerate(doc.paragraphs)]
@@ -208,12 +210,7 @@ def main():
         "package": package,
     }
 
-    payload = json.dumps(result, ensure_ascii=False, indent=2, default=dict)
-    if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(payload, encoding="utf-8")
-    else:
-        print(payload)
+    emit_result(result, args.json, args.summary, print_saved=False)
 
     if args.text:
         lines = []

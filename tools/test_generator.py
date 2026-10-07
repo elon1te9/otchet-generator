@@ -109,6 +109,16 @@ class GeneratorTests(unittest.TestCase):
     def test_observed_status_requires_image(self):
         manifest=synthetic_manifest(); manifest['figures'][0]['status']='observed'; manifest['figures'][0]['file']='missing.png'
         self.assertIn('observed-image',self.codes(manifest))
+    def test_screenshot_review_requires_actual_quality_checks(self):
+        manifest=synthetic_manifest(); record=manifest['figures'][0]
+        record.update(status='observed',file='missing.png')
+        self.assertIn('capture-review',self.codes(manifest))
+        record['capture_review']={'cursor':'neutral','ready':True,'readable':True,'note':'Synthetic manifest validation input.'}
+        self.assertNotIn('capture-review',self.codes(manifest))
+        # A checklist cannot substitute for the actual image.
+        self.assertIn('observed-image',self.codes(manifest))
+        record['capture_review']['ready']=False
+        self.assertIn('capture-review',self.codes(manifest))
     def test_toc_entry_inside_word_content_control(self):
         control=OxmlElement('w:sdt'); contents=OxmlElement('w:sdtContent'); control.append(contents)
         p=OxmlElement('w:p'); props=OxmlElement('w:pPr'); style=OxmlElement('w:pStyle'); style.set(qn('w:val'),'TOC1'); props.append(style); p.append(props)
@@ -130,6 +140,28 @@ class GeneratorTests(unittest.TestCase):
         with self.assertRaises(ValueError): load_plan(path)
     def test_toc_styles_are_built_in_for_word(self):
         self.assertFalse(self.doc.styles['toc 1'].element.get(qn('w:customStyle')))
+    def test_new_document_uses_only_heading_page_breaks(self):
+        from report_plan import outline_level
+        from report_pagination import effective
+        for p in self.doc.paragraphs:
+            self.assertFalse(p._p.xpath('.//w:br[@w:type="page"]'))
+            if outline_level(p) == 0:
+                self.assertTrue(effective(p,'page_break_before'))
+            if outline_level(p) == 1:
+                self.assertFalse(effective(p,'page_break_before'))
+    def test_explicit_break_before_subsection_or_text_is_rejected(self):
+        content=synthetic_content()
+        for target in (3,4):
+            bad={'blocks':content['blocks'][:target]+[{'type':'page_break'}]+content['blocks'][target:]}
+            with self.assertRaisesRegex(ValueError,'Explicit body page breaks'):
+                build(self.title,bad,self.plan,self.report,self.root)
+    def test_subsection_gap_after_unnumbered_level_one(self):
+        plan=synthetic_plan(); plan['headings'][1]['text']='УСТРОЙСТВО ПРОГРАММЫ'
+        content=synthetic_content(); content['blocks'][2]['text']=plan['headings'][1]['text']
+        build(self.title,content,plan,self.report,self.root)
+        doc=Document(self.report)
+        index=next(i for i,p in enumerate(doc.paragraphs) if p.text=='1.1 Обработка файлов')
+        self.assertEqual(doc.paragraphs[index-1].text,'УСТРОЙСТВО ПРОГРАММЫ')
     def test_word_localized_toc_ids(self):
         style=self.doc.styles['toc 1']; style.element.set(qn('w:styleId'),'14')
         paragraph=self.doc.paragraphs[body_start(self.doc,self.plan)].insert_paragraph_before('1 УСТРОЙСТВО ПРОГРАММЫ\t3')

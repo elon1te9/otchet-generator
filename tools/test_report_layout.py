@@ -5,6 +5,7 @@ from docx.shared import Pt, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from report_formatting import install_styles
 from check_revision_layout import check
+from docx.enum.text import WD_BREAK
 
 class LayoutGateTests(unittest.TestCase):
     def setUp(self):
@@ -70,5 +71,34 @@ class LayoutGateTests(unittest.TestCase):
     def test_testing_requires_two_tables(self):
         self.doc.add_paragraph('3 ТЕСТИРОВАНИЕ','Practice Section')
         self.assertIn('testing-tables',self.codes())
+    def test_section_requires_new_page(self):
+        section=next(p for p in self.doc.paragraphs if p.text=='1 РАЗДЕЛ')
+        section.paragraph_format.page_break_before=False
+        self.assertIn('section-page-start',self.codes())
+    def test_subsection_has_no_forced_page(self):
+        self.subheading.paragraph_format.page_break_before=True
+        self.assertIn('subsection-page-break',self.codes())
+    def test_heading_stays_with_text(self):
+        self.subheading.paragraph_format.keep_with_next=False
+        self.assertIn('heading-pagination',self.codes())
+    def test_body_break_cannot_force_sentence_end(self):
+        self.doc.paragraphs[1].add_run().add_break(WD_BREAK.PAGE)
+        self.assertIn('body-page-break',self.codes())
+    def test_no_gap_after_unnumbered_section(self):
+        section=self.doc.add_paragraph('ДОПОЛНЕНИЕ','Practice Structural')
+        self.doc.add_paragraph('1.3 Подраздел','Practice Subsection')
+        self.assertNotIn('subsection-gap',self.codes())
+        section.add_run().add_break(WD_BREAK.PAGE)
+        self.assertIn('body-page-break',self.codes())
+    def test_gap_can_stay_with_heading(self):
+        gap=self.doc.add_paragraph('','Practice Body')
+        gap.paragraph_format.keep_with_next=True
+        self.doc.add_paragraph('1.2 Второй подраздел','Practice Subsection')
+        self.doc.add_paragraph('Описание.','Practice Body')
+        self.assertNotIn('pagination-marker',self.codes())
+    def test_structural_pass_is_not_full_verification(self):
+        result=check(self.doc)
+        self.assertEqual(result['rendered_status'],'not-run')
+        self.assertFalse(result['complete_verification'])
 
 if __name__=='__main__': unittest.main()

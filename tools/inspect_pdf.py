@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import pdfplumber
@@ -58,6 +59,13 @@ def main():
             bitmap = pdf[index].render(scale=args.scale)
             image = bitmap.to_pil()
             image.save(args.render_dir / f"page-{index + 1}.png")
+        # A repeated render can shrink the document. Do not leave old pages
+        # looking like part of the latest output. Delete only our numbered PNGs.
+        target = args.render_dir.resolve()
+        for old in args.render_dir.glob('page-*.png'):
+            match = re.fullmatch(r'page-(\d+)\.png', old.name)
+            if match and int(match[1]) > len(pdf) and old.resolve().parent == target:
+                old.unlink()
 
 
 if __name__ == "__main__":

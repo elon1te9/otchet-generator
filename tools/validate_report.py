@@ -11,6 +11,7 @@ from pathlib import Path
 
 from docx import Document
 from report_plan import load_plan, structure_issues, body_start, is_toc
+from report_pagination import pagination_issues
 
 
 FIGURE_RE = re.compile(r"^Рисунок\s+(\d+)\.(\d+)\s+\S")
@@ -83,6 +84,9 @@ def main():
 
     for problem in structure_issues(doc, plan):
         add_issue(issues, "error", problem['code'], problem['message'])
+    if begin is not None:
+        for problem in pagination_issues(doc, begin):
+            add_issue(issues, "error", problem['code'], problem['message'])
     if 'СОДЕРЖАНИЕ' not in document_xml:
         add_issue(issues, "error", "missing-toc-heading", "Missing СОДЕРЖАНИЕ heading.")
 
@@ -125,6 +129,8 @@ def main():
         "figure_caption_count": len(figures),
         "issues": issues,
         "status": "fail" if any(i["severity"] == "error" for i in issues) else "pass",
+        "scope": "structural-only",
+        "rendered_review_required": True,
     }
     payload = json.dumps(result, ensure_ascii=False, indent=2)
     if args.json:

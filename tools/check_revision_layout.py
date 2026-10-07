@@ -7,18 +7,13 @@ from docx import Document
 from docx.oxml.ns import qn
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Mm
+from report_pagination import effective, pagination_issues
+from rendered_layout import inspect_rendered
 from report_plan import (load_plan, body_start, body_headings, outline_level,
                          normalized, role_index, section_end, structure_issues, figure_prior, cached_toc)
 
 def start_index(doc, plan=None):
     return body_start(doc, plan)
-
-def effective(p,attr):
-    value=getattr(p.paragraph_format,attr)
-    s=p.style
-    while value is None and s is not None:
-        value=getattr(s.paragraph_format,attr); s=s.base_style
-    return WD_ALIGN_PARAGRAPH.LEFT if attr=='alignment' and value is None else value
 
 def font(p,r,attr):
     value=getattr(r.font,attr); s=r.style
@@ -48,6 +43,7 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
         return {'status':'fail','issues':[{'code':'body-start','message':'Body heading missing.'}],'pages':[]}
     if plan:
         issues.extend(structure_issues(doc,plan))
+    issues.extend(pagination_issues(doc,begin))
     def para(p, label, size=14, spacing=1.5, indent=None, align=None):
         for attr in ('space_before','space_after','left_indent','right_indent'):
             if effective(p,attr) not in (None,0): issue('paragraph-spacing',f'{label}: {attr} must be zero')
@@ -74,14 +70,12 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
                 else: para(p,label,indent=0,align=WD_ALIGN_PARAGRAPH.CENTER)
             if outline_level(p)==1:
                 para(p,label,indent=Mm(12.5),align=WD_ALIGN_PARAGRAPH.LEFT)
-                prev=doc.paragraphs[i-1]
-                # First heading on a page can carry its one empty paragraph from prior page.
-                if prev.text.strip() and not re.match(r'^\d+\s',prev.text): issue('subsection-gap',label)
-                if not prev.text.strip() and i>begin+1 and re.match(r'^\d+\s',doc.paragraphs[i-2].text): issue('section-subsection-gap',f'{label}: empty paragraph directly after section')
-                if not prev.text.strip() and i>begin+1 and not doc.paragraphs[i-2].text.strip(): issue('subsection-gap',f'{label}: more than one empty paragraph')
         if not is_heading:
+            is_gap=(not p.text.strip() and not p._p.xpath('.//w:drawing | .//w:br')
+                    and i+1<len(doc.paragraphs) and outline_level(doc.paragraphs[i+1])==1)
             for attr in ('keep_together','keep_with_next','page_break_before'):
-                if effective(p,attr): issue('pagination-marker',f'{label}: {attr}')
+                if effective(p,attr) and not (is_gap and attr=='keep_with_next'):
+                    issue('pagination-marker',f'{label}: {attr}')
             if p.text.strip() and not p.text.startswith(('Рисунок ', 'Таблица ')) and not p._p.xpath('.//w:drawing'):
                 para(p,label,indent=Mm(12.5),align=WD_ALIGN_PARAGRAPH.JUSTIFY)
         if p.text.startswith('Таблица '):
@@ -145,6 +139,11 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
                     issue('pending-area',caption); continue
                 pending.append(caption); pending_captions.add(caption)
             elif record.get('status')=='observed':
+                review=record.get('capture_review',{})
+                if (not isinstance(review,dict) or review.get('cursor') not in ('neutral','intentional-hover')
+                        or review.get('ready') is not True or review.get('readable') is not True
+                        or not isinstance(review.get('note'),str) or not review['note'].strip()):
+                    issue('capture-review',caption + ': inspect the original screenshot and record cursor/readiness/readability.')
                 preceding=doc.paragraphs[index-1] if index>begin else None
                 if not record.get('file') or preceding is None or not preceding._p.xpath('.//w:drawing'):
                     issue('observed-image',caption)
@@ -185,6 +184,10 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
             if actual!=expected: issue('testing-columns',str(actual))
     pages=[]
     if pdf:
+        rendered_headings=plan['headings'] if plan else [
+            {'text':p.text,'level':outline_level(p)+1} for _,p in body_headings(doc,begin)]
+        pages,render_issues,first_body=inspect_rendered(pdf,rendered_headings)
+        issues.extend(render_issues)
         import pdfplumber
         with pdfplumber.open(pdf) as rendered:
             if len(rendered.pages)>25: issue('page-limit',str(len(rendered.pages)))
@@ -192,14 +195,6 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
             def heading_pages(title):
                 pattern=r'(?m)^' + r'\s+'.join(re.escape(word) for word in title.split()) + r'\s*$'
                 return [i for i,text in enumerate(texts,1) if re.search(pattern,text)]
-            starts=heading_pages(doc.paragraphs[begin].text)
-            first_body=starts[0] if starts else None
-            if first_body is None: issue('pdf-body-start','Cannot locate first body heading in PDF')
-            for i,page in enumerate(rendered.pages,1):
-                text=page.crop((0,0,page.width,page.height-60)).extract_text() or ''
-                lines=text.splitlines(); end=lines[-1] if lines else ''
-                pages.append({'page':i,'last_line':end})
-                if first_body is not None and i>=first_body and not end.endswith('.'): issue('sentence-page-end',f'Page {i}: {end}')
             # Word can recalculate PAGEREF on read-only PDF export. Compare with
             # the protected cached DOCX entries, not that recalculated PDF text.
             toc_entries=cached_toc(doc,begin)
@@ -215,6 +210,8 @@ def check(doc, pdf=None, baseline=None, plan=None, manifest=None):
                     issue('toc-render-page',f'{p.text}: cached {expected}, rendered {shown.group(1) if shown else "missing"}; inspect body bookmark target')
     return {'status':'fail' if issues else 'pending-manual' if pending else 'pass',
             'issues':issues,'pending_manual':pending,'pages':pages,
+            'rendered_status':('fail' if any(i['code'].startswith(('pdf-','page-','toc-')) for i in issues) else 'pass') if pdf else 'not-run',
+            'complete_verification':False,
             'visual_review_required':True,'evidence_review_required':True}
 
 if __name__=='__main__':

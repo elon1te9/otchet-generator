@@ -10,13 +10,17 @@ param(
 $ErrorActionPreference = 'Stop'
 $inputPath = (Resolve-Path -LiteralPath $InputDocx).Path
 if ($PreserveToc -and -not $BodyStartHeading) { throw '-PreserveToc requires -BodyStartHeading from the current report plan.' }
-$outputPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputPdf))
+function Resolve-OutputPath([string]$Path) {
+    if ([System.IO.Path]::IsPathRooted($Path)) { return [System.IO.Path]::GetFullPath($Path) }
+    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
+}
+$outputPath = Resolve-OutputPath $OutputPdf
 $outputDir = Split-Path -Parent $outputPath
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $openPath = $inputPath
 $readOnly = $true
 if ($OutputDocx) {
-    $docxPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputDocx))
+    $docxPath = Resolve-OutputPath $OutputDocx
     if ($docxPath -eq $inputPath) { throw 'OutputDocx must differ from InputDocx; preserve the original.' }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $docxPath) | Out-Null
     Copy-Item -LiteralPath $inputPath -Destination $docxPath -Force

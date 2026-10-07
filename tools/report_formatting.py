@@ -30,11 +30,11 @@ def install_styles(doc):
         pf.space_before = pf.space_after = Pt(0)
         pf.first_line_indent = Mm(indent); pf.left_indent = pf.right_indent = Mm(0)
         pf.line_spacing = spacing; pf.alignment = align
-        # Pagination flags create visible margin squares in Word's Show All view.
-        # Ordinary paragraphs use explicit, sentence-aligned page breaks instead.
+        # Body text flows automatically, even across a sentence boundary.
+        # Headings stay with following text; only level 1 starts a new page.
         pf.keep_together = outline is not None; pf.widow_control = True
         pf.keep_with_next = outline is not None
-        pf.page_break_before = False
+        pf.page_break_before = outline == 0
         if outline is not None:
             for old in s.element.xpath('./w:pPr/w:outlineLvl'):
                 old.getparent().remove(old)

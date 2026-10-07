@@ -7,7 +7,7 @@ import re
 from docx import Document
 from docx.enum.section import WD_SECTION_START
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt
@@ -51,7 +51,6 @@ def build(title, content, plan, output, root=None):
     toc = doc.add_paragraph('', 'Practice Body')
     toc.paragraph_format.first_line_indent = Mm(0)
     field(toc, 'TOC \\o "1-2" \\h \\z \\u', '')
-    toc.add_run().add_break(WD_BREAK.PAGE)
     fields = OxmlElement('w:updateFields'); fields.set(qn('w:val'), 'true')
     doc.settings.element.append(fields)
     headings = {h['text']: h for h in plan['headings']}
@@ -67,7 +66,8 @@ def build(title, content, plan, output, root=None):
             run.add_break()
         return paragraph
     previous = None
-    for block in content.get('blocks', []):
+    blocks = content.get('blocks', [])
+    for index, block in enumerate(blocks):
         kind = block.get('type')
         if kind == 'heading':
             text = block['text']
@@ -77,10 +77,11 @@ def build(title, content, plan, output, root=None):
             numbered = re.match(r'^\d+(?:\.\d+)*\s', text)
             if heading['level'] == 2:
                 follows_section = (previous and previous.get('type') == 'heading'
-                                   and headings[previous['text']]['level'] == 1
-                                   and re.match(r'^\d+\s', previous['text']))
+                                   and headings[previous['text']]['level'] == 1)
                 if not follows_section:
-                    blank('Practice Body')
+                    gap = blank('Practice Body')
+                    # Move the required gap with its heading, without forcing a page.
+                    gap.paragraph_format.keep_with_next = True
                 style = 'Practice Subsection'
             else:
                 style = 'Practice Section' if numbered else 'Practice Structural'
@@ -88,8 +89,13 @@ def build(title, content, plan, output, root=None):
         elif kind == 'paragraph':
             doc.add_paragraph(normalize_dashes(block['text']), 'Practice Body')
         elif kind == 'page_break':
-            if doc.paragraphs:
-                doc.paragraphs[-1].add_run().add_break(WD_BREAK.PAGE)
+            # Legacy input is harmless only at a section boundary. The heading
+            # style already supplies that break; never add a second one.
+            following = blocks[index + 1] if index + 1 < len(blocks) else {}
+            if (following.get('type') != 'heading'
+                    or headings.get(following.get('text'), {}).get('level') != 1):
+                raise ValueError('Explicit body page breaks are forbidden; use level-1 headings and automatic text flow.')
+            continue
         elif kind == 'figure':
             number = block['number']
             if not re.fullmatch(r'\d+\.\d+', number):
